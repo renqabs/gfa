@@ -1,6 +1,6 @@
 # GLM AI Free 服务
 
-![](https://img.shields.io/github/license/llm-red-team/glm-free-api.svg)
+[![](https://img.shields.io/github/license/llm-red-team/glm-free-api.svg)](LICENSE)
 ![](https://img.shields.io/github/stars/llm-red-team/glm-free-api.svg)
 ![](https://img.shields.io/github/forks/llm-red-team/glm-free-api.svg)
 ![](https://img.shields.io/docker/pulls/vinlic/glm-free-api.svg)
@@ -9,7 +9,7 @@
 
 与ChatGPT接口完全兼容。
 
-还有以下六个free-api欢迎关注：
+还有以下七个free-api欢迎关注：
 
 Moonshot AI（Kimi.ai）接口转API [kimi-free-api](https://github.com/LLM-Red-Team/kimi-free-api)
 
@@ -21,8 +21,37 @@ Moonshot AI（Kimi.ai）接口转API [kimi-free-api](https://github.com/LLM-Red-
 
 讯飞星火（Spark）接口转API [spark-free-api](https://github.com/LLM-Red-Team/spark-free-api)
 
+MiniMax（海螺AI）接口转API [hailuo-free-api](https://github.com/LLM-Red-Team/hailuo-free-api)
+
+深度求索（DeepSeek）接口转API [deepseek-free-api](https://github.com/LLM-Red-Team/deepseek-free-api)
+
 聆心智能 (Emohaa) 接口转API [emohaa-free-api](https://github.com/LLM-Red-Team/emohaa-free-api)
 
+## 目录
+
+* [免责声明](#免责声明)
+* [在线体验](#在线体验)
+* [效果示例](#效果示例)
+* [接入准备](#接入准备)
+  * [智能体接入](#智能体接入)
+  * [多账号接入](#多账号接入)
+* [Docker部署](#Docker部署)
+  * [Docker-compose部署](#Docker-compose部署)
+* [Render部署](#Render部署)
+* [Vercel部署](#Vercel部署)
+* [原生部署](#原生部署)
+* [推荐使用客户端](#推荐使用客户端)
+* [接口列表](#接口列表)
+  * [对话补全](#对话补全)
+  * [AI绘图](#AI绘图)
+  * [文档解读](#文档解读)
+  * [图像解析](#图像解析)
+  * [refresh_token存活检测](#refresh_token存活检测)
+* [注意事项](#注意事项)
+  * [Nginx反代优化](#Nginx反代优化)
+  * [Token统计](#Token统计)
+* [Star History](#star-history)
+  
 ## 免责声明
 
 **逆向API是不稳定的，建议前往智谱AI官方 https://open.bigmodel.cn/ 付费使用API，避免封禁的风险。**
@@ -34,36 +63,6 @@ Moonshot AI（Kimi.ai）接口转API [kimi-free-api](https://github.com/LLM-Red-
 **仅限自用，禁止对外提供服务或商用，避免对官方造成服务压力，否则风险自担！**
 
 **仅限自用，禁止对外提供服务或商用，避免对官方造成服务压力，否则风险自担！**
-
-## 目录
-
-* [声明](#声明)
-* [在线体验](#在线体验)
-* [效果示例](#效果示例)
-* [接入准备](#接入准备)
-  * [智能体接入](#智能体接入)
-  * [多账号接入](#多账号接入)
-* [Docker部署](#Docker部署)
-  * [Docker-compose部署](#Docker-compose部署)
-* [Render部署](#Render部署)
-* [Vercel部署](#Vercel部署)
-* [原生部署](#原生部署)
-* [接口列表](#接口列表)
-  * [对话补全](#对话补全)
-  * [AI绘图](#AI绘图)
-  * [文档解读](#文档解读)
-  * [图像解析](#图像解析)
-  * [refresh_token存活检测](#refresh_token存活检测)
-* [注意事项](#注意事项)
-  * [Nginx反代优化](#Nginx反代优化)
-
-## 声明
-
-仅限自用，禁止对外提供服务或商用，避免对官方造成服务压力，否则风险自担！
-
-仅限自用，禁止对外提供服务或商用，避免对官方造成服务压力，否则风险自担！
-
-仅限自用，禁止对外提供服务或商用，避免对官方造成服务压力，否则风险自担！
 
 ## 在线体验
 
@@ -254,6 +253,14 @@ pm2 reload glm-free-api
 pm2 stop glm-free-api
 ```
 
+## 推荐使用客户端
+
+使用以下二次开发客户端接入free-api系列项目更快更简单，支持文档/图像上传！
+
+由 [Clivia](https://github.com/Yanyutin753/lobe-chat) 二次开发的LobeChat [https://github.com/Yanyutin753/lobe-chat](https://github.com/Yanyutin753/lobe-chat)
+
+由 [时光@](https://github.com/SuYxh) 二次开发的ChatGPT Web [https://github.com/SuYxh/chatgpt-web-sea](https://github.com/SuYxh/chatgpt-web-sea)
+
 ## 接口列表
 
 目前支持与openai兼容的 `/v1/chat/completions` 接口，可自行使用与openai或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。
@@ -275,6 +282,9 @@ Authorization: Bearer [refresh_token]
 {
     // 如果使用智能体请填写智能体ID到此处，否则可以乱填
     "model": "glm4",
+    // 目前多轮对话基于消息合并实现，某些场景可能导致能力下降且受单轮最大token数限制
+    // 如果您想获得原生的多轮对话体验，可以传入首轮消息获得的id，来接续上下文
+    // "conversation_id": "65f6c28546bae1f0fbb532de",
     "messages": [
         {
             "role": "user",
@@ -289,6 +299,7 @@ Authorization: Bearer [refresh_token]
 响应数据：
 ```json
 {
+    // 如果想获得原生多轮对话体验，此id，你可以传入到下一轮对话的conversation_id来接续上下文
     "id": "65f6c28546bae1f0fbb532de",
     "model": "glm4",
     "object": "chat.completion",

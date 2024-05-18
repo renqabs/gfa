@@ -170,6 +170,7 @@ async function createCompletion(
   messages: any[],
   refreshToken: string,
   assistantId = DEFAULT_ASSISTANT_ID,
+  refConvId = '',
   retryCount = 0
 ) {
   return (async () => {
@@ -183,14 +184,18 @@ async function createCompletion(
       )
       : [];
 
+    // 如果引用对话ID不正确则重置引用
+    if (!/[0-9a-zA-Z]{24}/.test(refConvId))
+      refConvId = '';
+
     // 请求流
     const token = await acquireToken(refreshToken);
     const result = await axios.post(
       "https://chatglm.cn/chatglm/backend-api/assistant/stream",
       {
         assistant_id: assistantId,
-        conversation_id: "",
-        messages: messagesPrepare(messages, refs),
+        conversation_id: refConvId,
+        messages: messagesPrepare(messages, refs, !!refConvId),
         meta_data: {
           channel: "",
           draft_id: "",
@@ -232,7 +237,7 @@ async function createCompletion(
 
     // 异步移除会话
     removeConversation(answer.id, refreshToken, assistantId).catch((err) =>
-      console.error(err)
+      !refConvId && console.error(err)
     );
 
     return answer;
@@ -246,6 +251,7 @@ async function createCompletion(
           messages,
           refreshToken,
           assistantId,
+          refConvId,
           retryCount + 1
         );
       })();
@@ -266,6 +272,7 @@ async function createCompletionStream(
   messages: any[],
   refreshToken: string,
   assistantId = DEFAULT_ASSISTANT_ID,
+  refConvId = '',
   retryCount = 0
 ) {
   return (async () => {
@@ -279,14 +286,18 @@ async function createCompletionStream(
       )
       : [];
 
+    // 如果引用对话ID不正确则重置引用
+    if (!/[0-9a-zA-Z]{24}/.test(refConvId))
+      refConvId = '';
+
     // 请求流
     const token = await acquireToken(refreshToken);
     const result = await axios.post(
       `https://chatglm.cn/chatglm/backend-api/assistant/stream`,
       {
         assistant_id: assistantId,
-        conversation_id: "",
-        messages: messagesPrepare(messages, refs),
+        conversation_id: refConvId,
+        messages: messagesPrepare(messages, refs, !!refConvId),
         meta_data: {
           channel: "",
           draft_id: "",
@@ -349,7 +360,7 @@ async function createCompletionStream(
       );
       // 流传输结束后异步移除会话
       removeConversation(convId, refreshToken, assistantId).catch((err) =>
-        console.error(err)
+        !refConvId && console.error(err)
       );
     });
   })().catch((err) => {
@@ -362,6 +373,7 @@ async function createCompletionStream(
           messages,
           refreshToken,
           assistantId,
+          refConvId,
           retryCount + 1
         );
       })();
@@ -379,8 +391,7 @@ async function generateImages(
   return (async () => {
     logger.info(prompt);
     const messages = [
-
-      { role: "user", content: prompt },
+      { role: "user", content: prompt.indexOf('画') == -1 ? `请画：${prompt}` : prompt },
     ];
     // 请求流
     const token = await acquireToken(refreshToken);
@@ -487,54 +498,75 @@ function extractRefFileUrls(messages: any[]) {
  * 消息预处理
  *
  * 由于接口只取第一条消息，此处会将多条消息合并为一条，实现多轮对话效果
- * 使用”你“这个角色回复”我“这个角色，以第一人称对话\n
- * 我:旧消息1
- * 你:旧消息2
- * 我:新消息
  *
  * @param messages 参考gpt系列消息格式，多轮对话请完整提供上下文
+ * @param refs 参考文件列表
+ * @param isRefConv 是否为引用会话
  */
-function messagesPrepare(messages: any[], refs: any[]) {
-  // 检查最新消息是否含有"type": "image_url"或"type": "file",如果有则注入消息
-  let latestMessage = messages[messages.length - 1];
-  let hasFileOrImage =
-    Array.isArray(latestMessage.content) &&
-    latestMessage.content.some(
-      (v) => typeof v === "object" && ["file", "image_url"].includes(v["type"])
-    );
-  if (hasFileOrImage) {
-    let newFileMessage = {
-      content: "关注用户最新发送文件和消息",
-      role: "system",
-    };
-    messages.splice(messages.length - 1, 0, newFileMessage);
-    logger.info("注入提升尾部文件注意力system prompt");
-  } else {
-    // 由于注入会导致设定污染，暂时注释
-    // let newTextMessage = {
-    //   content: "关注用户最新的消息",
-    //   role: "system",
-    // };
-    // messages.splice(messages.length - 1, 0, newTextMessage);
-    // logger.info("注入提升尾部消息注意力system prompt");
-  }
-
-  const content = (
-    messages.reduce((content, message) => {
+function messagesPrepare(messages: any[], refs: any[], isRefConv = false) {
+  let content;
+  if (isRefConv || messages.length < 2) {
+    content = messages.reduce((content, message) => {
       if (_.isArray(message.content)) {
         return (
           message.content.reduce((_content, v) => {
             if (!_.isObject(v) || v["type"] != "text") return _content;
-            return _content + ("<|user|>\n" + v["text"] || "") + "\n";
+            return _content + (v["text"] || "") + "\n";
           }, content)
         );
       }
-      return (content += `${message.role
-        .replace("system", "<|sytstem|>")
-        .replace("assistant", "<|assistant|>")
-        .replace("user", "<|user|>")}\n${message.content}\n`);
-    }, "") + "<|assistant|>\n"
-  ).replace(/\!\[.+\]\(.+\)/g, "");
+      return content + `${message.content}\n`;
+    }, "");
+    logger.info("\n透传内容：\n" + content);
+  }
+  else {
+    // 检查最新消息是否含有"type": "image_url"或"type": "file",如果有则注入消息
+    let latestMessage = messages[messages.length - 1];
+    let hasFileOrImage =
+      Array.isArray(latestMessage.content) &&
+      latestMessage.content.some(
+        (v) => typeof v === "object" && ["file", "image_url"].includes(v["type"])
+      );
+    if (hasFileOrImage) {
+      let newFileMessage = {
+        content: "关注用户最新发送文件和消息",
+        role: "system",
+      };
+      messages.splice(messages.length - 1, 0, newFileMessage);
+      logger.info("注入提升尾部文件注意力system prompt");
+    } else {
+      // 由于注入会导致设定污染，暂时注释
+      // let newTextMessage = {
+      //   content: "关注用户最新的消息",
+      //   role: "system",
+      // };
+      // messages.splice(messages.length - 1, 0, newTextMessage);
+      // logger.info("注入提升尾部消息注意力system prompt");
+    }
+    content = (
+      messages.reduce((content, message) => {
+        const role = message.role
+          .replace("system", "<|sytstem|>")
+          .replace("assistant", "<|assistant|>")
+          .replace("user", "<|user|>");
+        if (_.isArray(message.content)) {
+          return (
+            message.content.reduce((_content, v) => {
+              if (!_.isObject(v) || v["type"] != "text") return _content;
+              return _content + (`${role}\n` + v["text"] || "") + "\n";
+            }, content)
+          );
+        }
+        return (content += `${role}\n${message.content}\n`);
+      }, "") + "<|assistant|>\n"
+    )
+      // 移除MD图像URL避免幻觉
+      .replace(/\!\[.+\]\(.+\)/g, "")
+      // 移除临时路径避免在新会话引发幻觉
+      .replace(/\/mnt\/data\/.+/g, "");
+    logger.info("\n对话合并：\n" + content);
+  }
+
   const fileRefs = refs.filter((ref) => !ref.width && !ref.height);
   const imageRefs = refs
     .filter((ref) => ref.width || ref.height)
@@ -542,7 +574,6 @@ function messagesPrepare(messages: any[], refs: any[]) {
       ref.image_url = ref.file_url;
       return ref;
     });
-  logger.info("\n对话合并：\n" + content);
   return [
     {
       role: "user",
@@ -700,6 +731,7 @@ async function receiveStream(stream: any): Promise<any> {
     let codeTemp = "";
     let lastExecutionOutput = "";
     let textOffset = 0;
+    let refContent = '';
     const parser = createParser((event) => {
       try {
         if (event.type !== "event") return;
@@ -741,14 +773,9 @@ async function receiveStream(stream: any): Promise<any> {
                 meta_data &&
                 _.isArray(meta_data.metadata_list)
               ) {
-                const searchText =
-                  meta_data.metadata_list.reduce(
-                    (meta, v) => meta + `检索 ${v.title}(${v.url}) ...`,
-                    ""
-                  ) + "\n";
-                textOffset += searchText.length;
-                toolCall = true;
-                return innerStr + searchText;
+                refContent = meta_data.metadata_list.reduce((meta, v) => {
+                  return meta + `${v.title} - ${v.url}\n`;
+                }, refContent);
               } else if (
                 type == "image" &&
                 _.isArray(image) &&
@@ -808,7 +835,7 @@ async function receiveStream(stream: any): Promise<any> {
           data.choices[0].message.content += chunk;
         } else {
           data.choices[0].message.content =
-            data.choices[0].message.content.replace(/【\d+†source】/g, "");
+            data.choices[0].message.content.replace(/【\d+†(来源|source)】/g, "") + (refContent ? `\n\n搜索结果来自：\n${refContent.replace(/\n$/, '')}` : '');
           resolve(data);
         }
       } catch (err) {
@@ -1063,7 +1090,7 @@ async function receiveImages(
                 let match;
                 while ((match = urlPattern.exec(text)) !== null) {
                   const url = match[1];
-                  if(imageUrls.indexOf(url) == -1)
+                  if (imageUrls.indexOf(url) == -1)
                     imageUrls.push(url);
                 }
               }
@@ -1142,7 +1169,7 @@ async function getTokenLiveStatus(refreshToken: string) {
     const { accessToken } = _result;
     return !!accessToken;
   }
-  catch(err) {
+  catch (err) {
     return false;
   }
 }
