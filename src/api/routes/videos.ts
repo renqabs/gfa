@@ -6,7 +6,7 @@ import util from "@/lib/util.ts";
 
 export default {
 
-  prefix: "/v1/videos",
+  prefix: "/yyds/v1/videos",
 
   post: {
 
