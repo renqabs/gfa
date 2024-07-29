@@ -5,7 +5,7 @@ import chat from "@/api/controllers/chat.ts";
 import util from "@/lib/util.ts";
 
 export default {
-  prefix: "/v1/images",
+  prefix: "/yyds/v1/images",
 
   post: {
     "/generations": async (request: Request) => {
